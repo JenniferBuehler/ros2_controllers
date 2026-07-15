@@ -94,6 +94,11 @@ protected:
   void init_dynamic_joint_state_msg();
   bool use_all_available_interfaces() const;
 
+  /// \brief Whether \p full_interface_name is one of the configured measurement-time interfaces.
+  /// Such interfaces are the source of header.stamp, not joint state data, and are therefore
+  /// excluded from the joint-state read/publish path (including /dynamic_joint_states).
+  bool is_timestamp_interface(const std::string & full_interface_name) const;
+
 protected:
   // Optional parameters
   std::shared_ptr<ParamListener> param_listener_;

@@ -55,6 +55,14 @@ Published topics
    ``/my_state_broadcaster/dynamic_joint_states``). If ``false`` (default),
    they are published at the root (e.g., ``/joint_states``).
 
+.. note::
+
+   By default the ``header.stamp`` of the published messages is set to the controller-manager
+   update time. Set the optional ``timestamp_state_interfaces.sec`` and
+   ``timestamp_state_interfaces.nsec`` parameters to the full names of two state interfaces which
+   contain a measurement time reported by the hardware (see the Parameters section below). This
+   measurement time will then be used instead in the stamp.
+
 
 Parameters
 ----------
