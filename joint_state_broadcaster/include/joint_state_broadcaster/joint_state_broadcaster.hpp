@@ -16,6 +16,7 @@
 #define JOINT_STATE_BROADCASTER__JOINT_STATE_BROADCASTER_HPP_
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -94,10 +95,20 @@ protected:
   void init_dynamic_joint_state_msg();
   bool use_all_available_interfaces() const;
 
-  /// \brief Whether \p full_interface_name is one of the configured measurement-time interfaces.
-  /// Such interfaces are the source of header.stamp, not joint state data, and are therefore
-  /// excluded from the joint-state read/publish path (including /dynamic_joint_states).
+  /// \brief Whether both measurement time interfaces are configured.
+  bool use_timestamp_interfaces() const;
+
+  /// \brief Whether the given interface is a measurement time interface.
   bool is_timestamp_interface(const std::string & full_interface_name) const;
+
+  /// \brief Read and validate an integer measurement time component.
+  /// \return the value, or std::nullopt if it cannot be read.
+  std::optional<int64_t> read_time_component(
+    std::size_t state_interface_index, int64_t minimum, int64_t maximum) const;
+
+  /// \brief Read a valid measurement timestamp from the configured state interfaces.
+  /// \return the timestamp, or std::nullopt if either component is unavailable or invalid.
+  std::optional<rclcpp::Time> read_measurement_time(rcl_clock_type_t clock_type) const;
 
 protected:
   // Optional parameters
@@ -105,10 +116,10 @@ protected:
   Params params_;
   std::unordered_map<std::string, std::string> map_interface_to_joint_state_;
 
-  // Optional source for header.stamp: indices into state_interfaces_ of the configured
-  // measurement-time sec/nsec interfaces. Unset -> header.stamp uses the controller-manager time.
+  // Optional source for header.stamp and the last timestamp read successfully from it.
   std::optional<std::size_t> timestamp_sec_index_;
   std::optional<std::size_t> timestamp_nsec_index_;
+  std::optional<rclcpp::Time> last_valid_measurement_time_;
 
   std::string frame_id_;
 
