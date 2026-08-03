@@ -67,7 +67,12 @@ class FriendJointStateBroadcaster : public joint_state_broadcaster::JointStateBr
   FRIEND_TEST(JointStateBroadcasterTest, TimestampStateInterfacesUnsupportedTypeUsesControllerTime);
   FRIEND_TEST(JointStateBroadcasterTest, TimestampStateInterfacesInvalidValuesAreSafe);
   FRIEND_TEST(JointStateBroadcasterTest, TimestampStateInterfacesUint32OverflowIsSafe);
-  FRIEND_TEST(JointStateBroadcasterTest, TimestampStateInterfacesZeroUntilFirstValidMeasurement);
+  FRIEND_TEST(
+    JointStateBroadcasterTest, TimestampStateInterfacesZeroSecondsWithNanosecondsIsValid);
+  FRIEND_TEST(
+    JointStateBroadcasterTest, TimestampStateInterfacesAbsentValueDoesNotPublish);
+  FRIEND_TEST(
+    JointStateBroadcasterTest, TimestampStateInterfacesNoPublishUntilFirstValidMeasurement);
   FRIEND_TEST(JointStateBroadcasterTest, TimestampStateInterfacesRetainLastValidStamp);
 };
 

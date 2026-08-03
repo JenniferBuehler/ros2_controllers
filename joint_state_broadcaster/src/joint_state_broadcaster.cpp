@@ -562,13 +562,35 @@ std::optional<int64_t> JointStateBroadcaster::read_time_component(
 std::optional<rclcpp::Time> JointStateBroadcaster::read_measurement_time(
   rcl_clock_type_t clock_type) const
 {
-  const auto sec =
-    read_time_component(*timestamp_sec_index_, 1, std::numeric_limits<int32_t>::max());
+  // Any seconds value is read. The meaning of the value is decided below.
+  const auto sec = read_time_component(
+    *timestamp_sec_index_, std::numeric_limits<int32_t>::min(),
+    std::numeric_limits<int32_t>::max());
   const auto nsec = read_time_component(*timestamp_nsec_index_, 0, 999999999);
   if (!sec.has_value() || !nsec.has_value())
   {
     return std::nullopt;
   }
+
+  // An all-zero stamp means "no measurement time". Hardware writes it deliberately, and it is the
+  // ROS convention for an unset time.
+  if (sec.value() == 0 && nsec.value() == 0)
+  {
+    return std::nullopt;
+  }
+
+  // A negative time cannot be published: rclcpp::Time does not represent one. Treat it as no
+  // measurement time and report it, since it is not how absence is meant to be signalled.
+  if (sec.value() < 0)
+  {
+    RCLCPP_ERROR_THROTTLE(
+      get_node()->get_logger(), *get_node()->get_clock(), 1000,
+      "State interface '%s' holds a negative measurement time (%ld s), which is not a representable "
+      "ROS time. Write an all-zero stamp to signal that no measurement time is available.",
+      params_.timestamp_state_interfaces.sec.c_str(), static_cast<long>(sec.value()));
+    return std::nullopt;
+  }
+
   return rclcpp::Time(
     static_cast<int32_t>(sec.value()), static_cast<uint32_t>(nsec.value()), clock_type);
 }
@@ -601,8 +623,7 @@ controller_interface::return_type JointStateBroadcaster::update(
     }
   }
 
-  // Once configured, header.stamp is the measurement time, keeping the last valid value during
-  // temporary read failures. A zero stamp means no measurement time is available yet.
+  // Once configured, header.stamp is the measurement time. Before the first valid one, nothing is published.
   rclcpp::Time stamp = time;
   if (timestamp_sec_index_.has_value() && timestamp_nsec_index_.has_value())
   {
@@ -611,8 +632,30 @@ controller_interface::return_type JointStateBroadcaster::update(
     {
       last_valid_measurement_time_ = measurement_time;
     }
-    stamp = last_valid_measurement_time_.value_or(
-      rclcpp::Time(static_cast<int64_t>(0), time.get_clock_type()));
+    else if (last_valid_measurement_time_.has_value())
+    {
+      // Lost a measurement time that was there before: a runtime fault, so keep repeating.
+      RCLCPP_ERROR_THROTTLE(
+        get_node()->get_logger(), *get_node()->get_clock(), 1000,
+        "Lost the measurement time from state interfaces '%s' and '%s'. header.stamp is frozen at "
+        "the last valid one.",
+        params_.timestamp_state_interfaces.sec.c_str(),
+        params_.timestamp_state_interfaces.nsec.c_str());
+    }
+    else
+    {
+      // No measurement time has ever arrived, so there is nothing to stamp a message with. Publish
+      // nothing rather than substituting the controller time, which a consumer could not tell apart
+      // from a real measurement time.
+      RCLCPP_ERROR_THROTTLE(
+        get_node()->get_logger(), *get_node()->get_clock(), 1000,
+        "State interfaces '%s' and '%s' carry no valid measurement time. Not publishing joint "
+        "states until they do.",
+        params_.timestamp_state_interfaces.sec.c_str(),
+        params_.timestamp_state_interfaces.nsec.c_str());
+      return controller_interface::return_type::OK;
+    }
+    stamp = *last_valid_measurement_time_;
   }
 
   if (realtime_joint_state_publisher_)
