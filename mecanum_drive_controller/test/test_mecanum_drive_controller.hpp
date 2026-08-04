@@ -107,7 +107,9 @@ public:
   controller_interface::CallbackReturn on_activate(
     const rclcpp_lifecycle::State & previous_state) override
   {
-    auto ref_itfs = on_export_reference_interfaces();
+    // export_reference_interfaces() populates ordered_exported_reference_interfaces_
+    export_reference_interfaces();
+    export_state_interfaces();
     return mecanum_drive_controller::MecanumDriveController::on_activate(previous_state);
   }
 
