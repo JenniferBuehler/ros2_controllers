@@ -73,7 +73,7 @@ class FriendJointStateBroadcaster : public joint_state_broadcaster::JointStateBr
     JointStateBroadcasterTest, TimestampStateInterfacesAbsentValueDoesNotPublish);
   FRIEND_TEST(
     JointStateBroadcasterTest, TimestampStateInterfacesNoPublishUntilFirstValidMeasurement);
-  FRIEND_TEST(JointStateBroadcasterTest, TimestampStateInterfacesRetainLastValidStamp);
+  FRIEND_TEST(JointStateBroadcasterTest, TimestampStateInterfacesReadFailureSkipsCycle);
 };
 
 class JointStateBroadcasterTest : public ::testing::Test

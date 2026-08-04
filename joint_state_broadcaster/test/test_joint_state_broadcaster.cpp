@@ -378,7 +378,7 @@ TEST_F(JointStateBroadcasterTest, TimestampStateInterfacesDoNotMaskMissingJointI
 
 TEST_F(JointStateBroadcasterTest, TimestampStateInterfacesInvalidValuesAreSafe)
 {
-  // Invalid values are rejected without throwing, keeping the last valid stamp or publishing nothing.
+  // Invalid values are rejected without throwing, and their cycles are not published.
   init_broadcaster_and_set_parameters("", {}, {}, timestamp_parameters());
   assign_state_interfaces_with_timestamp(measurement_sec_state_, measurement_nsec_state_);
   ASSERT_TRUE(configure_succeeds(state_broadcaster_));
@@ -401,6 +401,13 @@ TEST_F(JointStateBroadcasterTest, TimestampStateInterfacesInvalidValuesAreSafe)
   measurement_nsec_value_ = 567000000.0;
   ASSERT_NO_THROW(
     state_broadcaster_->update(rclcpp::Time(12, 0), rclcpp::Duration::from_seconds(0.01)));
+  const auto published_positions = state_broadcaster_->joint_state_msg_.position;
+
+  // Fresh joint data from here on, so an unchanged message proves each cycle was skipped.
+  for (auto & value : joint_values_)
+  {
+    value += 0.5;
+  }
 
   const std::vector<std::pair<double, double>> invalid_values = {
     {-1.0, 0.0},
@@ -418,6 +425,7 @@ TEST_F(JointStateBroadcasterTest, TimestampStateInterfacesInvalidValuesAreSafe)
     measurement_nsec_value_ = nsec;
     ASSERT_NO_THROW(
       state_broadcaster_->update(rclcpp::Time(13, 0), rclcpp::Duration::from_seconds(0.01)));
+    EXPECT_EQ(state_broadcaster_->joint_state_msg_.position, published_positions);
     EXPECT_EQ(state_broadcaster_->joint_state_msg_.header.stamp.sec, 1234);
     EXPECT_EQ(state_broadcaster_->joint_state_msg_.header.stamp.nanosec, 567000000u);
   }
@@ -534,9 +542,10 @@ TEST_F(JointStateBroadcasterTest, TimestampStateInterfacesNoPublishUntilFirstVal
   EXPECT_EQ(state_broadcaster_->joint_state_msg_.header.stamp.nanosec, 999999999u);
 }
 
-TEST_F(JointStateBroadcasterTest, TimestampStateInterfacesRetainLastValidStamp)
+TEST_F(JointStateBroadcasterTest, TimestampStateInterfacesReadFailureSkipsCycle)
 {
-  // A transient read failure keeps the last valid stamp.
+  // A read failure leaves this cycle without a measurement time, so it is skipped rather than
+  // published with the previous stamp, which would no longer describe the data.
   init_broadcaster_and_set_parameters("", {}, {}, timestamp_parameters());
   assign_state_interfaces_with_timestamp(measurement_sec_state_, measurement_nsec_state_);
   ASSERT_TRUE(configure_succeeds(state_broadcaster_));
@@ -544,10 +553,19 @@ TEST_F(JointStateBroadcasterTest, TimestampStateInterfacesRetainLastValidStamp)
   ASSERT_EQ(
     state_broadcaster_->update(rclcpp::Time(15, 0), rclcpp::Duration::from_seconds(0.01)),
     controller_interface::return_type::OK);
+  ASSERT_EQ(state_broadcaster_->joint_state_msg_.header.stamp.sec, 1234);
+  const auto published_positions = state_broadcaster_->joint_state_msg_.position;
 
+  // Fresh joint data, but the seconds interface cannot be read. An unchanged message then proves
+  // nothing was published, since the publish path is the only writer of joint_state_msg_.
+  for (auto & value : joint_values_)
+  {
+    value += 0.5;
+  }
   std::unique_lock<std::shared_mutex> timestamp_lock(measurement_sec_state_.get_mutex());
   ASSERT_NO_THROW(
     state_broadcaster_->update(rclcpp::Time(16, 0), rclcpp::Duration::from_seconds(0.01)));
+  EXPECT_EQ(state_broadcaster_->joint_state_msg_.position, published_positions);
   EXPECT_EQ(state_broadcaster_->joint_state_msg_.header.stamp.sec, 1234);
   EXPECT_EQ(state_broadcaster_->joint_state_msg_.header.stamp.nanosec, 567000000u);
 }

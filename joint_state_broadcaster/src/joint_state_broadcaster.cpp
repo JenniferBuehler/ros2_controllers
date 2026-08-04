@@ -248,7 +248,6 @@ controller_interface::CallbackReturn JointStateBroadcaster::on_activate(
   // Resolve the optional measurement time interfaces, if configured.
   timestamp_sec_index_.reset();
   timestamp_nsec_index_.reset();
-  last_valid_measurement_time_.reset();
   if (use_timestamp_interfaces())
   {
     for (std::size_t i = 0; i < state_interfaces_.size(); ++i)
@@ -305,7 +304,6 @@ controller_interface::CallbackReturn JointStateBroadcaster::on_deactivate(
   name_if_value_mapping_.clear();
   timestamp_sec_index_.reset();
   timestamp_nsec_index_.reset();
-  last_valid_measurement_time_.reset();
 
   return CallbackReturn::SUCCESS;
 }
@@ -623,30 +621,15 @@ controller_interface::return_type JointStateBroadcaster::update(
     }
   }
 
-  // Once configured, header.stamp is the measurement time. Before the first valid one, nothing is published.
+  // Once configured, header.stamp is the measurement time and nothing else. Without one there is no
+  // honest stamp for this cycle's data, so the cycle is skipped rather than published with a
+  // substitute or with an older measurement time that no longer describes the data.
   rclcpp::Time stamp = time;
   if (timestamp_sec_index_.has_value() && timestamp_nsec_index_.has_value())
   {
     const auto measurement_time = read_measurement_time(time.get_clock_type());
-    if (measurement_time.has_value())
+    if (!measurement_time.has_value())
     {
-      last_valid_measurement_time_ = measurement_time;
-    }
-    else if (last_valid_measurement_time_.has_value())
-    {
-      // Lost a measurement time that was there before: a runtime fault, so keep repeating.
-      RCLCPP_ERROR_THROTTLE(
-        get_node()->get_logger(), *get_node()->get_clock(), 1000,
-        "Lost the measurement time from state interfaces '%s' and '%s'. header.stamp is frozen at "
-        "the last valid one.",
-        params_.timestamp_state_interfaces.sec.c_str(),
-        params_.timestamp_state_interfaces.nsec.c_str());
-    }
-    else
-    {
-      // No measurement time has ever arrived, so there is nothing to stamp a message with. Publish
-      // nothing rather than substituting the controller time, which a consumer could not tell apart
-      // from a real measurement time.
       RCLCPP_ERROR_THROTTLE(
         get_node()->get_logger(), *get_node()->get_clock(), 1000,
         "State interfaces '%s' and '%s' carry no valid measurement time. Not publishing joint "
@@ -655,7 +638,7 @@ controller_interface::return_type JointStateBroadcaster::update(
         params_.timestamp_state_interfaces.nsec.c_str());
       return controller_interface::return_type::OK;
     }
-    stamp = *last_valid_measurement_time_;
+    stamp = *measurement_time;
   }
 
   if (realtime_joint_state_publisher_)
